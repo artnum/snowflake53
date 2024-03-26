@@ -1,0 +1,17 @@
+{
+    "name": "artnum/snowflake53",
+    "authors": [{
+        "name": "Etienne Bagnoud",
+        "email": "etienne@artisan-numerique.ch",
+        "role": "Developer"
+    }],
+    "license": "MIT",
+    "description": "Generate unique 53 bits snowflake IDs", 
+    "type": "project", 
+    "require": { "php": "^8.2"}, 
+    "autoload": { 
+        "psr-4": { 
+            "Snowflake53\\": "src/"
+        } 
+    } 
+}
