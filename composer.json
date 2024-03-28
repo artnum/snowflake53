@@ -7,7 +7,7 @@
     }],
     "license": "MIT",
     "description": "Generate unique 53 bits snowflake IDs", 
-    "type": "project", 
+    "type": "library", 
     "require": { "php": ">=8.2"}, 
     "autoload": { 
         "files": ["src/Snowflake53.php"]
