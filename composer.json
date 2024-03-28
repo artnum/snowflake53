@@ -8,10 +8,8 @@
     "license": "MIT",
     "description": "Generate unique 53 bits snowflake IDs", 
     "type": "project", 
-    "require": { "php": "^8.2"}, 
+    "require": { "php": ">=8.2"}, 
     "autoload": { 
-        "psr-4": { 
-            "Snowflake53\\": "src/"
-        } 
+        "files": ["src/Snowflake53.php"]
     } 
 }
