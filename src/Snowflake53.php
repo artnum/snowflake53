@@ -125,7 +125,7 @@ trait ID {
             | ($sequenceId & SEQ64);
     }
 
-    public static function generateId():int {
+    public static function generateId(int $machineId = -1):int {
         try {
             $time = (intval(microtime(true) * 10) - EPOCH53) & 0x3FFFFFFFFFF;
             
@@ -142,7 +142,11 @@ trait ID {
                 self::updateSequenceId($shm, 0);
             }
             self::releaseSHM($shm, $sem);
-            $machineId = self::getMachineId(MACHINE53);
+            $machineId = (
+                $machineId < 0 
+                    ? self::getMachineId(MACHINE53) 
+                    : ($machineId & MACHINE53)
+            );
 
             return self::mixValues53($time, $machineId, $sequenceId);
         } catch (Exception $e) {
@@ -150,11 +154,11 @@ trait ID {
         }
     }
 
-    public static function get53 ():int {
-        return self::generateId();
+    public static function get53 (int $machineId = -1):int {
+        return self::generateId($machineId);
     }
 
-    public static function generateId64():int {
+    public static function generateId64(int $machineId = -1):int {
         try {
             $time = (intval(microtime(true) * 1000) - EPOCH64) & 0x7FFFFFFFF;
                         
@@ -171,8 +175,11 @@ trait ID {
                 self::updateSequenceId($shm, 0);
             }
             self::releaseSHM($shm, $sem);
-            $machineId = self::getMachineId(
-                MACHINE64);
+            $machineId = (
+                $machineId < 0 
+                    ? self::getMachineId(MACHINE64) 
+                    : ($machineId & MACHINE64)
+            );
 
             return self::mixValues64($time, $machineId, $sequenceId);
         } catch (Exception $e) {
@@ -180,7 +187,7 @@ trait ID {
         }
     }   
 
-    public static function get64 ():int {
-        return self::generateId64();
+    public static function get64 (int $machineId = -1):int {
+        return self::generateId64($machineId);
     }
 }
