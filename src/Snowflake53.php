@@ -5,13 +5,14 @@ namespace Snowflake53;
 use Exception;
 use SysvSharedMemory;
 use SysvSemaphore;
+use Zxing\Qrcode\Decoder\ECB;
 
   /* 10th of seconds since 1st march 2024 at 9:00:00 */
   CONST EPOCH53 =   17092800000;
   const EPOCH64 = 1709280000000;
   const PRJ53 = '5';
   const PRJ64 = '6';
-  const MACHINE53 = 0xF;
+  const MACHINE53 = 0xFF;
   const MACHINE64 = 0x3FF;
   const SEQ53 = 0x3FF;
   const SEQ64 = 0xFFF;
@@ -70,6 +71,12 @@ trait ID {
      */
     public static function destroySHM ():void {
         [$shm, $sem] = self::initSHM(PRJ53);
+        self::updateSequenceId($shm, 0);
+        sem_remove($sem);
+        shm_remove($shm);
+
+        [$shm, $sem] = self::initSHM(PRJ64);
+        self::updateSequenceId($shm, 0);
         sem_remove($sem);
         shm_remove($shm);
     }
@@ -141,7 +148,7 @@ trait ID {
         if ($machineId === false) {
             return 0;
         }
-        return intval($machineId) & $mask;
+        return intval($machineId);
     }
 
     /**
@@ -199,9 +206,8 @@ trait ID {
             $machineId = (
                 $machineId < 0 
                     ? self::getMachineId(MACHINE53) 
-                    : ($machineId & MACHINE53)
+                    : $machineId
             );
-
             return self::mixValues53($time, $machineId, $sequenceId);
         } catch (Exception $e) {
             throw new Exception('Error generating ID', 0, $e);
@@ -234,6 +240,7 @@ trait ID {
             if ($time === $lastTime) {
                 $sequenceId = self::getSequenceId($shm, SEQ64);
             }
+
             self::updateLastTime($shm, $time);
             if ($time === $lastTime) {
                 self::updateSequenceId($shm, $sequenceId);
@@ -244,7 +251,7 @@ trait ID {
             $machineId = (
                 $machineId < 0 
                     ? self::getMachineId(MACHINE64) 
-                    : ($machineId & MACHINE64)
+                    : $machineId
             );
 
             return self::mixValues64($time, $machineId, $sequenceId);
