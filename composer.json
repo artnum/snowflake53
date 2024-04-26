@@ -14,5 +14,12 @@
     },
     "require-dev": {
         "phpunit/phpunit": "^11.1"
+    },
+    "scripts": {
+        "test": [
+            "export COMPOSER_NO_DEV=0",
+            "@composer install",
+            "vendor/phpunit/phpunit/phpunit src/Snowflake53Test.php"
+        ]
     }
 }
