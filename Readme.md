@@ -9,6 +9,14 @@ It dosen't require any external infrastructure (like Memcached or Redis or ...)
 to keep sequence counting as it is done by shared memory and use semaphore for
 locking. So other processes can tap into the sequence counting too :)
 
+## Install
+
+Via composer :
+
+```
+$ composer require artnum/snowflake53
+```
+
 ## Usage
 
 ```php
