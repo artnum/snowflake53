@@ -5,7 +5,6 @@ namespace Snowflake53;
 use Exception;
 use SysvSharedMemory;
 use SysvSemaphore;
-use Zxing\Qrcode\Decoder\ECB;
 
   /* 10th of seconds since 1st march 2024 at 9:00:00 */
   CONST EPOCH53 =   17092800000;
@@ -27,6 +26,7 @@ use Zxing\Qrcode\Decoder\ECB;
  */
 trait ID {
     public static string $SHMPath = __FILE__;
+    private static ?int $machineId = null;
     /**
      * Initialize shared memory and semaphore. It is used to count sequences.
      * @param string $prj Either '5' or '6'.
@@ -133,22 +133,22 @@ trait ID {
      * @return int masked, by $mask, integer.
      */
     private static function getMachineId (int $mask = MACHINE53):int {
+        if (self::$machineId !== null) return self::$machineId;
         $machineId = 0;
         switch ($mask) {
             default:
             case MACHINE53:
-                $machineId = getenv('SNOWFLAK53_MACHINE_ID')
-                    || getenv('SNOWFLAKE_MACHINE_ID');
+                $machineId = getenv('SNOWFLAK53_MACHINE_ID');
                 break;
             case MACHINE64:
-                $machineId = getenv('SNOWFLAK64_MACHINE_ID')
-                    || getenv('SNOWFLAKE_MACHINE_ID');
+                $machineId = getenv('SNOWFLAK64_MACHINE_ID');
                 break;
         }
         if ($machineId === false) {
-            return 0;
+            $machineId = getenv('SNOWFLAKE_MACHINE_ID');
         }
-        return intval($machineId);
+        self::$machineId = (intval($machineId) & 0x3FF);
+        return self::$machineId;
     }
 
     /**
