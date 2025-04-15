@@ -6,25 +6,27 @@ use Exception;
 use SysvSharedMemory;
 use SysvSemaphore;
 
-  /* 10th of seconds since 1st march 2024 at 9:00:00 */
-  CONST EPOCH53 =   17092800000;
-  const EPOCH64 = 1709280000000;
-  const PRJ53 = '5';
-  const PRJ64 = '6';
-  const MACHINE53 = 0xFF;
-  const MACHINE64 = 0x3FF;
-  const SEQ53 = 0x3FF;
-  const SEQ64 = 0xFFF;
-
 /* snowflake ID generator, 53 bits variant, use s/10, 255 machine, 1023 sequences  
  * up for more than 100 years (from 2024 to 2124, then javascript might support
  * full 64 bits integers)
- * Can also generate 64 bits IDs if needed.
+ * Can also generate 63 bits IDs if needed.
  * 
  * Counter is shared between all processes on the same machine via shared memory
  * so it doesn't need to have Redis, Memcached or any other shared storage.
  */
 trait ID {
+    /* ms since 1st march 2024 at 9:00:00 */
+    const EPOCH63 = 1709280000000;
+    const PRJ63 = '6';
+    const SEQ63 = 0xFFF;
+    const MACHINE63 = 0x3FF;
+
+    /* 10th of seconds since 1st march 2024 at 9:00:00 */
+    CONST EPOCH53 =   17092800000;
+    const PRJ53 = '5';
+    const MACHINE53 = 0xFF;
+    const SEQ53 = 0x3FF;
+
     public static string $SHMPath = __FILE__;
     private static ?int $machineId = null;
     /**
@@ -33,7 +35,7 @@ trait ID {
      * @return (SysvSharedMemory|SysvSemaphore)[] Semaphore and shared memory segment.
      * @throws Exception 
      */
-    private static function initSHM (string $prj = PRJ53):array {
+    private static function initSHM (string $prj = self::PRJ53):array {
         $shmId = ftok(self::$SHMPath, $prj);
         if ($shmId === -1) {
             throw new Exception('Error creating shared memory segment');
@@ -49,16 +51,16 @@ trait ID {
             throw new Exception('Error creating semaphore');
         }
 
-        $maxTries = 1000;
+        $maxTries = 100;
         do {
             $maxTries--;
-            if (sem_acquire($sem)) {
+            if (sem_acquire($sem, true)) {
                 break;
             }
             if ($maxTries <= 0) {
                 throw new Exception('Error acquiring semaphore');
             }
-            usleep(1000);
+            usleep(100);
         } while (1);
 
         return [$shm, $sem];
@@ -70,15 +72,16 @@ trait ID {
      * @throws Exception 
      */
     public static function destroySHM ():void {
-        [$shm, $sem] = self::initSHM(PRJ53);
-        self::updateSequenceId($shm, 0);
-        sem_remove($sem);
-        shm_remove($shm);
-
-        [$shm, $sem] = self::initSHM(PRJ64);
-        self::updateSequenceId($shm, 0);
-        sem_remove($sem);
-        shm_remove($shm);
+        foreach ([self::PRJ53, self::PRJ63] as $prj) {
+            try {
+                [$shm, $sem] = self::initSHM($prj);
+                self::updateSequenceId($shm, 0);
+                sem_remove($sem);
+                shm_remove($shm);
+            } catch (Exception $e) {
+                // nothing. already gone
+            }
+        }
     }
 
     /**
@@ -87,7 +90,7 @@ trait ID {
      * @param int $seq Either SEQ53 or SEQ64.
      * @return mixed 
      */
-    private static function getSequenceId (SysvSharedMemory $shm, int $seq = SEQ53):int {
+    private static function getSequenceId (SysvSharedMemory $shm, int $seq = self::SEQ53):int {
         $sequenceId = 0;
         if (shm_has_var($shm, 0)) {
             $sequenceId = shm_get_var($shm, 0);
@@ -132,51 +135,23 @@ trait ID {
      * @param int $mask Either MACHINE53 or MACHINE64
      * @return int masked, by $mask, integer.
      */
-    private static function getMachineId (int $mask = MACHINE53):int {
+    private static function getMachineId (int $mask = self::MACHINE53):int {
         if (self::$machineId !== null) return self::$machineId;
         $machineId = 0;
         switch ($mask) {
             default:
-            case MACHINE53:
+            case self::MACHINE53:
                 $machineId = getenv('SNOWFLAK53_MACHINE_ID');
                 break;
-            case MACHINE64:
+            case self::MACHINE63:
                 $machineId = getenv('SNOWFLAK64_MACHINE_ID');
                 break;
         }
         if ($machineId === false) {
             $machineId = getenv('SNOWFLAKE_MACHINE_ID');
         }
-        self::$machineId = (intval($machineId) & 0x3FF);
+        self::$machineId = (intval($machineId) & $mask);
         return self::$machineId;
-    }
-
-    /**
-     * Mix values to generate a 53 bits ID.
-     * @param int $time The time
-     * @param int $machineId The machine
-     * @param int $sequenceId The sequence
-     * @return int The ID
-     */
-    private static function mixValues53 (int $time, int $machineId, int $sequenceId):int {
-        return 0 
-            | ($time << 18) 
-            | (($machineId & MACHINE53) << 10)  
-            | ($sequenceId & SEQ53);
-    }
-
-    /**
-     * Mix values to generate a 64 bits ID.
-     * @param mixed $time The time
-     * @param mixed $machineId The machine
-     * @param mixed $sequenceId The sequence
-     * @return int The ID
-     */
-    private static function mixValues64 (int $time, int $machineId, int $sequenceId):int {
-        return 0 
-            | ($time << 23) 
-            | (($machineId & MACHINE64) << 13)  
-            | ($sequenceId & SEQ64);
     }
 
     /**
@@ -188,13 +163,13 @@ trait ID {
      */
     public static function get53(int $machineId = -1):int {
         try {
-            $time = (intval(microtime(true) * 10) - EPOCH53) & 0x3FFFFFFFFFF;
-            
-            list($shm, $sem) = self::initSHM(PRJ53);
+            list($shm, $sem) = self::initSHM(self::PRJ53);
+
+            $time = (intval((microtime(true)) * 10) - self::EPOCH53) & 0x7FFFFFFFF;            
             $lastTime = self::getLastTime($shm);
             $sequenceId = 0;
             if ($time === $lastTime) {
-                $sequenceId = self::getSequenceId($shm, SEQ53);
+                $sequenceId = self::getSequenceId($shm, self::SEQ53);
             }
             self::updateLastTime($shm, $time);
             if ($time === $lastTime) {
@@ -205,15 +180,17 @@ trait ID {
             self::releaseSHM($shm, $sem);
             $machineId = (
                 $machineId < 0 
-                    ? self::getMachineId(MACHINE53) 
+                    ? self::getMachineId(self::MACHINE53) 
                     : $machineId
             );
-            return self::mixValues53($time, $machineId, $sequenceId);
+            return 0 
+                | ($time << 18) 
+                | (($machineId & self::MACHINE53) << 10)  
+                | ($sequenceId & self::SEQ53);
         } catch (Exception $e) {
             throw new Exception('Error generating ID', 0, $e);
         }
     }
-
 
     /**
      * @see get53
@@ -224,21 +201,32 @@ trait ID {
     }
 
     /**
-     * Generate a 64 bits ID.
-     * @param int $machineId The machine ID, if set to -1, it will look for SNOWFLAKE64_MACHINE_ID, SNOWFLAKE53_MACHINE_ID
-     * and SNOWFLAKE_MACHINE_ID environment variables. If not found, it will use 0.
-     * @return int A 64 bits integer.
-     * @throws Exception 
+     * @see get63
+     * @deprecated 
      */
     public static function get64(int $machineId = -1):int {
+        return self::get63($machineId);
+    }
+
+    /**
+     * Generate a 63 bits ID.
+     * @param int $machineId The machine ID, if set to -1, it will look for SNOWFLAKE64_MACHINE_ID, SNOWFLAKE53_MACHINE_ID
+     * and SNOWFLAKE_MACHINE_ID environment variables. If not found, it will use 0.
+     * @return int A 63 bits integer.
+     * @throws Exception 
+     */
+    public static function get63(int $machineId = -1):int {
         try {
-            $time = (intval(microtime(true) * 1000) - EPOCH64) & 0x7FFFFFFFF;
+            list($shm, $sem) = self::initSHM(self::PRJ63);
+            $time = (int) (microtime(true) * 1000) - self::EPOCH63;
+            if ($time < 0 || $time >= (1 << 41)) {
+                throw new Exception('Timestamp not in the 41 bit range');
+            }
                         
-            list($shm, $sem) = self::initSHM(PRJ64);
             $lastTime = self::getLastTime($shm);
             $sequenceId = 0;
             if ($time === $lastTime) {
-                $sequenceId = self::getSequenceId($shm, SEQ64);
+                $sequenceId = self::getSequenceId($shm, self::SEQ63);
             }
 
             self::updateLastTime($shm, $time);
@@ -250,11 +238,19 @@ trait ID {
             self::releaseSHM($shm, $sem);
             $machineId = (
                 $machineId < 0 
-                    ? self::getMachineId(MACHINE64) 
+                    ? self::getMachineId(self::MACHINE63) 
                     : $machineId
             );
 
-            return self::mixValues64($time, $machineId, $sequenceId);
+            $id = 0 
+                | ($time << 22) 
+                | (($machineId & self::MACHINE63) << 12)  
+                | ($sequenceId & self::SEQ63);
+            
+            if ($id > PHP_INT_MAX || $id < 0) {
+                throw new Exception('ID not in range');
+            }
+            return $id;
         } catch (Exception $e) {
             throw new Exception('Error generating ID', 0, $e);
         }
@@ -265,6 +261,6 @@ trait ID {
      * @deprecated 
      */
     public static function generateId64 (int $machineId = -1):int {
-        return self::get64($machineId);
+        return self::get63($machineId);
     }
 }
